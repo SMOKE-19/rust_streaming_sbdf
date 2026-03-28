@@ -6,3 +6,7 @@ Rust/PyO3 기반 SBDF 스트리밍 writer 패키지입니다.
 가상환경에 설치된 이 패키지를 import 해서 사용합니다.
 
 빌드와 설치 방법은 [`build.md`](/home/smoke_nb_sv/dev/projects/rust_streaming_sbdf/build.md) 를 참고하면 됩니다.
+
+라이선스는 top-level [`LICENSE`](/home/smoke_nb_sv/dev/projects/rust_streaming_sbdf/LICENSE) 를 따르며,
+vendored `sbdf-c` 관련 고지는 [`THIRD_PARTY_NOTICES.md`](/home/smoke_nb_sv/dev/projects/rust_streaming_sbdf/THIRD_PARTY_NOTICES.md)
+에 정리되어 있습니다.
