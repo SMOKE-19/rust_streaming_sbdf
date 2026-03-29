@@ -35,22 +35,20 @@
 - compiled Rust extension
 - Python wrapper
 - SBDF writer public API
+- Parquet -> SBDF streaming helper
 
 현재 기준의 기본 진입점은 아래다.
 
 - `streaming_sbdf_rs.StreamingSbdfWriter`
 - `streaming_sbdf_rs.SBDFError`
-
-상위 프로젝트인 `pj-etl_system` 에서는 이 wheel이 가상환경에 설치되어 있어야
-`smoking_data.streaming_sbdf` 가 이를 import해서 사용한다.
+- `streaming_sbdf_rs.parquet_to_sbdf_streaming`
 
 역할 분리는 아래처럼 본다.
 
 - `streaming_sbdf_rs`
   - 저수준 SBDF writer
-  - batch 단위 dict-of-lists 를 받아 SBDF slice 를 기록한다.
-- `smoking_data.streaming_sbdf.parquet_to_sbdf_streaming(...)`
   - Parquet 입력 helper
+  - batch 단위 dict-of-lists 를 받아 SBDF slice 를 기록한다.
   - DuckDB로 Parquet를 읽고 batch 단위로 Rust writer에 넘긴다.
 
 ### 왜 한 패키지로 묶는가
@@ -141,7 +139,7 @@ from streaming_sbdf_rs import SBDFError, StreamingSbdfWriter
 예시:
 
 ```python
-from smoking_data.streaming_sbdf import parquet_to_sbdf_streaming
+from streaming_sbdf_rs import parquet_to_sbdf_streaming
 
 parquet_to_sbdf_streaming(
     "/path/to/input.parquet",
@@ -154,6 +152,7 @@ parquet_to_sbdf_streaming(
 
 - `parquet_path`, `sbdf_path` 는 `str | pathlib.Path` 를 받을 수 있다.
 - `column_types` 를 생략하면 DuckDB가 해석한 Parquet 스키마를 기준으로 Spotfire 타입을 자동 매핑한다.
+- DuckDB `memory_limit` 은 `4GB` 로 설정하고, spill 디렉토리는 기본값을 사용한다.
 - 중첩 Parquet 타입(`ARRAY`, `LIST`, `STRUCT`, `MAP`, `...[]`)은 지원하지 않으며, 컬럼명과 DuckDB 타입을 포함한 예외를 발생시킨다.
 - 중첩 타입이 필요하면 `select_sql` 에서 scalar 타입으로 캐스팅한 뒤 export 해야 한다.
 
