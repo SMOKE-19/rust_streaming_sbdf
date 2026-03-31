@@ -11,8 +11,8 @@ Rust/PyO3 기반 SBDF 스트리밍 writer 패키지입니다.
 
 - `streaming_sbdf_rs` 는 저수준 SBDF writer와 고수준 Parquet export helper를 함께 제공합니다.
 - `streaming_sbdf_rs.parquet_to_sbdf_streaming(...)` 는 `Path` 입력을 받을 수 있습니다.
-- helper에서 `column_types` 를 생략하면 DuckDB가 해석한 Parquet 스키마를 기준으로 Spotfire 타입을 자동 매핑합니다.
-- helper는 DuckDB `memory_limit` 을 `4GB` 로 설정하고, spill 디렉토리는 DuckDB 기본값을 사용합니다.
+- helper에서 `column_types` 를 생략하면 Rust Arrow/Parquet reader가 해석한 Parquet 스키마를 기준으로 Spotfire 타입을 자동 매핑합니다.
+- helper는 DuckDB에 의존하지 않고, Parquet 파일 경로를 직접 읽어 row batch 단위로 스트리밍 export 합니다.
 - 중첩 Parquet 타입(`ARRAY`, `LIST`, `STRUCT`, `MAP`, `...[]`)은 SBDF export 대상으로 지원하지 않으며, 명시적 예외를 발생시킵니다.
 
 저수준 writer 사용 기준:

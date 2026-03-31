@@ -9,7 +9,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.27.1", features = ["extension-module"] }
+parquet = "56.2.0"
+arrow-array = "56.2.0"
+arrow-schema = "56.2.0"
 
 [build-dependencies]
 cc = "1.1"
-

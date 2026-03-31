@@ -49,7 +49,7 @@
   - 저수준 SBDF writer
   - Parquet 입력 helper
   - batch 단위 dict-of-lists 를 받아 SBDF slice 를 기록한다.
-  - DuckDB로 Parquet를 읽고 batch 단위로 Rust writer에 넘긴다.
+  - Rust Arrow/Parquet reader로 Parquet를 읽고 batch 단위로 SBDF writer에 넘긴다.
 
 ### 왜 한 패키지로 묶는가
 
@@ -151,10 +151,10 @@ parquet_to_sbdf_streaming(
 이 helper의 동작 기준:
 
 - `parquet_path`, `sbdf_path` 는 `str | pathlib.Path` 를 받을 수 있다.
-- `column_types` 를 생략하면 DuckDB가 해석한 Parquet 스키마를 기준으로 Spotfire 타입을 자동 매핑한다.
-- DuckDB `memory_limit` 은 `4GB` 로 설정하고, spill 디렉토리는 기본값을 사용한다.
-- 중첩 Parquet 타입(`ARRAY`, `LIST`, `STRUCT`, `MAP`, `...[]`)은 지원하지 않으며, 컬럼명과 DuckDB 타입을 포함한 예외를 발생시킨다.
-- 중첩 타입이 필요하면 `select_sql` 에서 scalar 타입으로 캐스팅한 뒤 export 해야 한다.
+- `column_types` 를 생략하면 Rust Arrow/Parquet reader가 해석한 Parquet 스키마를 기준으로 Spotfire 타입을 자동 매핑한다.
+- helper는 DuckDB에 의존하지 않고, Parquet 파일을 직접 읽어 row batch 단위로 스트리밍 export 한다.
+- 중첩 Parquet 타입(`ARRAY`, `LIST`, `STRUCT`, `MAP`, `...[]`)은 지원하지 않으며, 컬럼명과 Arrow 타입을 포함한 예외를 발생시킨다.
+- 중첩 타입이 필요하면 upstream 단계에서 scalar 타입으로 미리 변환한 parquet를 넘겨야 한다.
 
 또는 Rust 패키지를 직접 사용할 수도 있다.
 

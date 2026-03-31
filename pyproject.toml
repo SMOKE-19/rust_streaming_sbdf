@@ -5,7 +5,6 @@ build-backend = "maturin"
 [project]
 name = "streaming_sbdf_rs"
 version = "0.1.0"
-dependencies = ["duckdb==1.5.0"]
 
 [tool.maturin]
 python-source = "python"
