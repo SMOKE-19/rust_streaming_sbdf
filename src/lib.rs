@@ -35,6 +35,9 @@ const SBDF_BINARYTYPEID: c_int = 11;
 const SBDF_PLAINARRAYENCODINGTYPEID: c_int = 1;
 const SBDF_RUNLENGTHENCODINGTYPEID: c_int = 2;
 const SBDF_BITARRAYENCODINGTYPEID: c_int = 3;
+const UNIX_EPOCH_DAYS_FROM_YEAR_ONE: i64 = 719_162;
+const MILLIS_PER_DAY: i64 = 86_400_000;
+const UNIX_EPOCH_MILLIS_FROM_YEAR_ONE: i64 = UNIX_EPOCH_DAYS_FROM_YEAR_ONE * MILLIS_PER_DAY;
 
 #[repr(C)]
 struct sbdf_valuetype {
@@ -421,11 +424,11 @@ fn millis_from_datetime(value: &Bound<'_, PyDateTime>) -> i64 {
         + value.get_second() as i64)
         * 1000
         + (value.get_microsecond() as i64 / 1000);
-    days * 86_400_000 + day_ms
+    days * MILLIS_PER_DAY + day_ms
 }
 
 fn millis_from_date(value: &Bound<'_, PyDate>) -> i64 {
-    days_since_epoch(value.get_year(), value.get_month(), value.get_day()) * 86_400_000
+    days_since_epoch(value.get_year(), value.get_month(), value.get_day()) * MILLIS_PER_DAY
 }
 
 fn millis_from_time(value: &Bound<'_, PyTime>) -> i64 {
@@ -434,9 +437,17 @@ fn millis_from_time(value: &Bound<'_, PyTime>) -> i64 {
 }
 
 fn millis_from_timedelta(value: &Bound<'_, PyDelta>) -> i64 {
-    value.get_days() as i64 * 86_400_000
+    value.get_days() as i64 * MILLIS_PER_DAY
         + value.get_seconds() as i64 * 1000
         + value.get_microseconds() as i64 / 1000
+}
+
+fn sbdf_millis_from_unix_days(days_since_unix_epoch: i64) -> i64 {
+    (days_since_unix_epoch + UNIX_EPOCH_DAYS_FROM_YEAR_ONE) * MILLIS_PER_DAY
+}
+
+fn sbdf_millis_from_unix_millis(millis_since_unix_epoch: i64) -> i64 {
+    millis_since_unix_epoch + UNIX_EPOCH_MILLIS_FROM_YEAR_ONE
 }
 
 fn build_column_buffer(value_type: ValueType, values: &[Bound<'_, PyAny>], invalids: &[u8]) -> PyResult<ColumnBuffer> {
@@ -831,7 +842,13 @@ fn build_native_column_buffer(column_name: &str, array: &dyn Array) -> PyResult<
                 .ok_or_else(|| PyTypeError::new_err(format!("failed to read date32 column '{column_name}'")))?;
             NativeColumnBuffer::TimeLike(
                 (0..typed.len())
-                    .map(|i| if typed.is_null(i) { 0 } else { typed.value(i) as i64 * 86_400_000 })
+                    .map(|i| {
+                        if typed.is_null(i) {
+                            0
+                        } else {
+                            sbdf_millis_from_unix_days(typed.value(i) as i64)
+                        }
+                    })
                     .collect(),
             )
         }
@@ -842,11 +859,22 @@ fn build_native_column_buffer(column_name: &str, array: &dyn Array) -> PyResult<
                 .ok_or_else(|| PyTypeError::new_err(format!("failed to read date64 column '{column_name}'")))?;
             NativeColumnBuffer::TimeLike(
                 (0..typed.len())
-                    .map(|i| if typed.is_null(i) { 0 } else { typed.value(i) })
+                    .map(|i| {
+                        if typed.is_null(i) {
+                            0
+                        } else {
+                            sbdf_millis_from_unix_millis(typed.value(i))
+                        }
+                    })
                     .collect(),
             )
         }
-        DataType::Timestamp(unit, _) => NativeColumnBuffer::TimeLike(timestamp_array_to_millis(array, *unit)?),
+        DataType::Timestamp(unit, _) => NativeColumnBuffer::TimeLike(
+            timestamp_array_to_millis(array, *unit)?
+                .into_iter()
+                .map(sbdf_millis_from_unix_millis)
+                .collect(),
+        ),
         DataType::Time32(unit) | DataType::Time64(unit) => NativeColumnBuffer::TimeLike(time_array_to_millis(array, *unit)?),
         DataType::Utf8 => {
             let typed = array
@@ -1397,4 +1425,43 @@ fn streaming_sbdf_rs(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<
     module.add_class::<StreamingSbdfWriter>()?;
     module.add_function(wrap_pyfunction!(parquet_to_sbdf_streaming, module)?)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        days_since_epoch, sbdf_millis_from_unix_days, sbdf_millis_from_unix_millis, MILLIS_PER_DAY,
+        UNIX_EPOCH_DAYS_FROM_YEAR_ONE, UNIX_EPOCH_MILLIS_FROM_YEAR_ONE,
+    };
+
+    #[test]
+    fn year_one_epoch_is_zero_days() {
+        assert_eq!(days_since_epoch(1, 1, 1), 0);
+    }
+
+    #[test]
+    fn unix_epoch_offset_matches_year_one_calendar_days() {
+        assert_eq!(days_since_epoch(1970, 1, 1), UNIX_EPOCH_DAYS_FROM_YEAR_ONE);
+        assert_eq!(UNIX_EPOCH_MILLIS_FROM_YEAR_ONE, UNIX_EPOCH_DAYS_FROM_YEAR_ONE * MILLIS_PER_DAY);
+    }
+
+    #[test]
+    fn date32_days_are_shifted_from_unix_epoch_to_sbdf_epoch() {
+        assert_eq!(sbdf_millis_from_unix_days(0), UNIX_EPOCH_MILLIS_FROM_YEAR_ONE);
+        let days_2025 = days_since_epoch(2025, 1, 1) - days_since_epoch(1970, 1, 1);
+        assert_eq!(
+            sbdf_millis_from_unix_days(days_2025),
+            days_since_epoch(2025, 1, 1) * MILLIS_PER_DAY
+        );
+    }
+
+    #[test]
+    fn timestamp_millis_are_shifted_from_unix_epoch_to_sbdf_epoch() {
+        assert_eq!(sbdf_millis_from_unix_millis(0), UNIX_EPOCH_MILLIS_FROM_YEAR_ONE);
+        let noon_ms = 12 * 60 * 60 * 1000;
+        assert_eq!(
+            sbdf_millis_from_unix_millis(noon_ms),
+            UNIX_EPOCH_MILLIS_FROM_YEAR_ONE + noon_ms
+        );
+    }
 }
