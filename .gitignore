@@ -4,3 +4,4 @@ __pycache__/
 *.py[cod]
 
 python/streaming_sbdf_rs/*.so
+src/streaming_sbdf_rs/*.so

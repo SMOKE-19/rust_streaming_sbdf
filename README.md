@@ -1,25 +1,35 @@
-# rust_streaming_sbdf
+# `streaming_sbdf_rs`
 
-Rust/PyO3 기반 SBDF 스트리밍 writer 패키지입니다.
+`streaming_sbdf_rs`는 Rust 기반 SBDF writer와 Parquet -> SBDF 변환 helper를 제공하는 Python 패키지다.
 
-실제 배포 패키지 이름은 `streaming_sbdf_rs` 이고, `pj-etl_system` 에서는
-가상환경에 설치된 이 패키지를 import 해서 사용합니다.
+이 디렉터리가 실제 editable 설치 루트다.
 
-빌드와 설치 방법은 [`build.md`](/home/smoke_nb_sv/dev/projects/rust_streaming_sbdf/build.md) 를 참고하면 됩니다.
+## 현재 구조
 
-핵심 사용 기준:
+- `pyproject.toml`: Python 패키지 메타데이터
+- `Cargo.toml`: Rust crate 설정
+- `src/streaming_sbdf_rs/__init__.py`: Python 래퍼
+- `src/lib.rs`: Rust 구현
+- `vendor/`: 포함된 외부 소스
 
-- `streaming_sbdf_rs` 는 저수준 SBDF writer와 고수준 Parquet export helper를 함께 제공합니다.
-- `streaming_sbdf_rs.parquet_to_sbdf_streaming(...)` 는 `Path` 입력을 받을 수 있습니다.
-- helper에서 `column_types` 를 생략하면 Rust Arrow/Parquet reader가 해석한 Parquet 스키마를 기준으로 Spotfire 타입을 자동 매핑합니다.
-- helper는 DuckDB에 의존하지 않고, Parquet 파일 경로를 직접 읽어 row batch 단위로 스트리밍 export 합니다.
-- 중첩 Parquet 타입(`ARRAY`, `LIST`, `STRUCT`, `MAP`, `...[]`)은 SBDF export 대상으로 지원하지 않으며, 명시적 예외를 발생시킵니다.
+## 공개 API
 
-저수준 writer 사용 기준:
+- `StreamingSbdfWriter`
+- `SBDFError`
+- `parquet_to_sbdf_streaming()`
 
-- `StreamingSbdfWriter` 는 현재 출력 파일 경로를 문자열로 받는 것을 기준으로 사용합니다.
-- `StreamingSbdfWriter` 를 직접 사용할 때는 `column_types` 를 명시하는 것을 권장합니다.
+## 주요 기능
 
-라이선스는 top-level [`LICENSE`](/home/smoke_nb_sv/dev/projects/rust_streaming_sbdf/LICENSE) 를 따르며,
-vendored `sbdf-c` 관련 고지는 [`THIRD_PARTY_NOTICES.md`](/home/smoke_nb_sv/dev/projects/rust_streaming_sbdf/THIRD_PARTY_NOTICES.md)
-에 정리되어 있습니다.
+- Rust 기반 SBDF writer
+- Parquet 파일을 batch 단위로 읽어 SBDF로 스트리밍 변환
+- 출력 경로 부모 디렉터리 자동 생성
+
+## 설치
+
+```bash
+pip install -e .
+```
+
+Rust 확장을 빌드해야 하므로 Rust toolchain이 필요하다.
+
+자세한 호출 예시는 [USAGE.md](./USAGE.md) 를 보면 된다.
