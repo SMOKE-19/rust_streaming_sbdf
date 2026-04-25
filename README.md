@@ -17,11 +17,16 @@
 - `StreamingSbdfWriter`
 - `SBDFError`
 - `parquet_to_sbdf_streaming()`
+- `parquet_files_to_sbdf_streaming()`
+- `parquet_dataset_to_sbdf_streaming()`
+- `parquet_manifest_to_sbdf_streaming()`
 
 ## 주요 기능
 
 - Rust 기반 SBDF writer
 - Parquet 파일을 batch 단위로 읽어 SBDF로 스트리밍 변환
+- 여러 Parquet shard를 하나의 SBDF stream으로 순차 변환
+- Parquet dataset 디렉터리와 line-based manifest 입력 지원
 - 출력 경로 부모 디렉터리 자동 생성
 
 ## 설치

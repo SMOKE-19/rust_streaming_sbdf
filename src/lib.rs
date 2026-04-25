@@ -1,7 +1,7 @@
 use arrow_array::{
     Array, BinaryArray, BooleanArray, Date32Array, Date64Array, Float32Array, Float64Array,
-    Int16Array, Int32Array, Int64Array, Int8Array, LargeBinaryArray, LargeStringArray,
-    RecordBatch, StringArray, Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray,
+    Int16Array, Int32Array, Int64Array, Int8Array, LargeBinaryArray, LargeStringArray, RecordBatch,
+    StringArray, Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray,
     Time64NanosecondArray, TimestampMicrosecondArray, TimestampMillisecondArray,
     TimestampNanosecondArray, TimestampSecondArray, UInt16Array, UInt32Array, UInt64Array,
     UInt8Array,
@@ -20,18 +20,6 @@ use std::fs::File;
 use std::ptr::{null, null_mut};
 
 const SBDF_OK: c_int = 0;
-const SBDF_BOOLTYPEID: c_int = 1;
-const SBDF_INTTYPEID: c_int = 2;
-const SBDF_LONGTYPEID: c_int = 3;
-const SBDF_FLOATTYPEID: c_int = 4;
-const SBDF_DOUBLETYPEID: c_int = 5;
-const SBDF_DATETIMETYPEID: c_int = 6;
-const SBDF_DATETYPEID: c_int = 7;
-const SBDF_TIMETYPEID: c_int = 8;
-const SBDF_TIMESPANTYPEID: c_int = 9;
-const SBDF_STRINGTYPEID: c_int = 10;
-const SBDF_BINARYTYPEID: c_int = 11;
-
 const SBDF_PLAINARRAYENCODINGTYPEID: c_int = 1;
 const SBDF_RUNLENGTHENCODINGTYPEID: c_int = 2;
 const SBDF_BITARRAYENCODINGTYPEID: c_int = 3;
@@ -106,7 +94,11 @@ unsafe extern "C" {
     fn sbdf_tm_create(head: *mut sbdf_metadata_head, out: *mut *mut sbdf_tablemetadata) -> c_int;
     fn sbdf_tm_destroy(meta: *mut sbdf_tablemetadata);
     fn sbdf_tm_add(col_md: *mut sbdf_metadata_head, table: *mut sbdf_tablemetadata) -> c_int;
-    fn sbdf_cm_set_values(name: *const c_char, vt: sbdf_valuetype, md: *mut sbdf_metadata_head) -> c_int;
+    fn sbdf_cm_set_values(
+        name: *const c_char,
+        vt: sbdf_valuetype,
+        md: *mut sbdf_metadata_head,
+    ) -> c_int;
 
     fn sbdf_fh_write_cur(file: *mut c_void) -> c_int;
     fn sbdf_tm_write(file: *mut c_void, meta: *const sbdf_tablemetadata) -> c_int;
@@ -116,19 +108,24 @@ unsafe extern "C" {
     fn sbdf_ts_write(file: *mut c_void, slice: *const sbdf_tableslice) -> c_int;
     fn sbdf_ts_write_end(file: *mut c_void) -> c_int;
 
-    fn sbdf_va_create(encoding: c_int, obj: *const sbdf_object, out: *mut *mut sbdf_valuearray) -> c_int;
+    fn sbdf_va_create(
+        encoding: c_int,
+        obj: *const sbdf_object,
+        out: *mut *mut sbdf_valuearray,
+    ) -> c_int;
     fn sbdf_va_create_dflt(obj: *const sbdf_object, out: *mut *mut sbdf_valuearray) -> c_int;
     fn sbdf_va_destroy(arr: *mut sbdf_valuearray);
 
     fn sbdf_cs_create(out: *mut *mut sbdf_columnslice, values: *mut sbdf_valuearray) -> c_int;
-    fn sbdf_cs_add_property(out: *mut sbdf_columnslice, name: *const c_char, values: *mut sbdf_valuearray) -> c_int;
+    fn sbdf_cs_add_property(
+        out: *mut sbdf_columnslice,
+        name: *const c_char,
+        values: *mut sbdf_valuearray,
+    ) -> c_int;
     fn sbdf_cs_destroy_all(col: *mut sbdf_columnslice);
 }
 
 const SBDF_ISINVALID_VALUEPROPERTY: &[u8] = b"IsInvalid\0";
-
-#[pyclass]
-struct SBDFError {}
 
 #[derive(Clone, Copy)]
 enum ValueType {
@@ -159,7 +156,9 @@ impl ValueType {
             "TimeSpan" => Ok(Self::TimeSpan),
             "String" => Ok(Self::String),
             "Binary" => Ok(Self::Binary),
-            other => Err(PyValueError::new_err(format!("unknown Spotfire type: {other}"))),
+            other => Err(PyValueError::new_err(format!(
+                "unknown Spotfire type: {other}"
+            ))),
         }
     }
 
@@ -197,22 +196,6 @@ impl ValueType {
         )))
     }
 
-    fn type_id(self) -> c_int {
-        match self {
-            Self::Bool => SBDF_BOOLTYPEID,
-            Self::Int => SBDF_INTTYPEID,
-            Self::Long => SBDF_LONGTYPEID,
-            Self::Float => SBDF_FLOATTYPEID,
-            Self::Double => SBDF_DOUBLETYPEID,
-            Self::DateTime => SBDF_DATETIMETYPEID,
-            Self::Date => SBDF_DATETYPEID,
-            Self::Time => SBDF_TIMETYPEID,
-            Self::TimeSpan => SBDF_TIMESPANTYPEID,
-            Self::String => SBDF_STRINGTYPEID,
-            Self::Binary => SBDF_BINARYTYPEID,
-        }
-    }
-
     fn sbdf_type(self) -> sbdf_valuetype {
         unsafe {
             match self {
@@ -230,6 +213,22 @@ impl ValueType {
             }
         }
     }
+
+    fn spotfire_name(self) -> &'static str {
+        match self {
+            Self::Bool => "Boolean",
+            Self::Int => "Integer",
+            Self::Long => "LongInteger",
+            Self::Float => "SingleReal",
+            Self::Double => "Real",
+            Self::DateTime => "DateTime",
+            Self::Date => "Date",
+            Self::Time => "Time",
+            Self::TimeSpan => "TimeSpan",
+            Self::String => "String",
+            Self::Binary => "Binary",
+        }
+    }
 }
 
 enum ColumnBuffer {
@@ -240,12 +239,12 @@ enum ColumnBuffer {
     Double(Vec<f64>),
     TimeLike(Vec<i64>),
     String {
-        values: Vec<Vec<u8>>,
+        _values: Vec<Vec<u8>>,
         ptrs: Vec<*const c_char>,
         lengths: Vec<c_int>,
     },
     Binary {
-        values: Vec<Vec<u8>>,
+        _values: Vec<Vec<u8>>,
         ptrs: Vec<*const c_char>,
         lengths: Vec<c_int>,
     },
@@ -298,95 +297,15 @@ impl ColumnBuffer {
                     null(),
                     &mut obj,
                 ),
-                Self::String { ptrs, lengths, .. } | Self::Binary { ptrs, lengths, .. } => sbdf_obj_create_arr(
-                    value_type.sbdf_type(),
-                    ptrs.len() as c_int,
-                    ptrs.as_ptr().cast(),
-                    lengths.as_ptr(),
-                    &mut obj,
-                ),
-            }
-        };
-        if error != SBDF_OK {
-            return Err(PyRuntimeError::new_err("failed to create SBDF object"));
-        }
-        Ok(obj)
-    }
-}
-
-enum NativeColumnBuffer {
-    Bool(Vec<u8>),
-    Int(Vec<i32>),
-    Long(Vec<i64>),
-    Float(Vec<f32>),
-    Double(Vec<f64>),
-    TimeLike(Vec<i64>),
-    String {
-        values: Vec<Vec<u8>>,
-        ptrs: Vec<*const c_char>,
-        lengths: Vec<c_int>,
-    },
-    Binary {
-        values: Vec<Vec<u8>>,
-        ptrs: Vec<*const c_char>,
-        lengths: Vec<c_int>,
-    },
-}
-
-impl NativeColumnBuffer {
-    fn create_object(&self, value_type: ValueType) -> PyResult<*mut sbdf_object> {
-        let mut obj = null_mut();
-        let error = unsafe {
-            match self {
-                Self::Bool(values) => sbdf_obj_create_arr(
-                    value_type.sbdf_type(),
-                    values.len() as c_int,
-                    values.as_ptr().cast(),
-                    null(),
-                    &mut obj,
-                ),
-                Self::Int(values) => sbdf_obj_create_arr(
-                    value_type.sbdf_type(),
-                    values.len() as c_int,
-                    values.as_ptr().cast(),
-                    null(),
-                    &mut obj,
-                ),
-                Self::Long(values) => sbdf_obj_create_arr(
-                    value_type.sbdf_type(),
-                    values.len() as c_int,
-                    values.as_ptr().cast(),
-                    null(),
-                    &mut obj,
-                ),
-                Self::Float(values) => sbdf_obj_create_arr(
-                    value_type.sbdf_type(),
-                    values.len() as c_int,
-                    values.as_ptr().cast(),
-                    null(),
-                    &mut obj,
-                ),
-                Self::Double(values) => sbdf_obj_create_arr(
-                    value_type.sbdf_type(),
-                    values.len() as c_int,
-                    values.as_ptr().cast(),
-                    null(),
-                    &mut obj,
-                ),
-                Self::TimeLike(values) => sbdf_obj_create_arr(
-                    value_type.sbdf_type(),
-                    values.len() as c_int,
-                    values.as_ptr().cast(),
-                    null(),
-                    &mut obj,
-                ),
-                Self::String { ptrs, lengths, .. } | Self::Binary { ptrs, lengths, .. } => sbdf_obj_create_arr(
-                    value_type.sbdf_type(),
-                    ptrs.len() as c_int,
-                    ptrs.as_ptr().cast(),
-                    lengths.as_ptr(),
-                    &mut obj,
-                ),
+                Self::String { ptrs, lengths, .. } | Self::Binary { ptrs, lengths, .. } => {
+                    sbdf_obj_create_arr(
+                        value_type.sbdf_type(),
+                        ptrs.len() as c_int,
+                        ptrs.as_ptr().cast(),
+                        lengths.as_ptr(),
+                        &mut obj,
+                    )
+                }
             }
         };
         if error != SBDF_OK {
@@ -432,7 +351,8 @@ fn millis_from_date(value: &Bound<'_, PyDate>) -> i64 {
 }
 
 fn millis_from_time(value: &Bound<'_, PyTime>) -> i64 {
-    (value.get_hour() as i64 * 3600 + value.get_minute() as i64 * 60 + value.get_second() as i64) * 1000
+    (value.get_hour() as i64 * 3600 + value.get_minute() as i64 * 60 + value.get_second() as i64)
+        * 1000
         + (value.get_microsecond() as i64 / 1000)
 }
 
@@ -450,41 +370,75 @@ fn sbdf_millis_from_unix_millis(millis_since_unix_epoch: i64) -> i64 {
     millis_since_unix_epoch + UNIX_EPOCH_MILLIS_FROM_YEAR_ONE
 }
 
-fn build_column_buffer(value_type: ValueType, values: &[Bound<'_, PyAny>], invalids: &[u8]) -> PyResult<ColumnBuffer> {
+fn build_column_buffer(
+    value_type: ValueType,
+    values: &[Bound<'_, PyAny>],
+    invalids: &[u8],
+) -> PyResult<ColumnBuffer> {
     match value_type {
         ValueType::Bool => Ok(ColumnBuffer::Bool(
             values
                 .iter()
                 .zip(invalids.iter())
-                .map(|(value, invalid)| if *invalid == 1 { 0 } else { u8::from(value.extract::<bool>().unwrap_or(false)) })
+                .map(|(value, invalid)| {
+                    if *invalid == 1 {
+                        0
+                    } else {
+                        u8::from(value.extract::<bool>().unwrap_or(false))
+                    }
+                })
                 .collect(),
         )),
         ValueType::Int => Ok(ColumnBuffer::Int(
             values
                 .iter()
                 .zip(invalids.iter())
-                .map(|(value, invalid)| if *invalid == 1 { 0 } else { value.extract::<i32>().unwrap_or(0) })
+                .map(|(value, invalid)| {
+                    if *invalid == 1 {
+                        0
+                    } else {
+                        value.extract::<i32>().unwrap_or(0)
+                    }
+                })
                 .collect(),
         )),
         ValueType::Long => Ok(ColumnBuffer::Long(
             values
                 .iter()
                 .zip(invalids.iter())
-                .map(|(value, invalid)| if *invalid == 1 { 0 } else { value.extract::<i64>().unwrap_or(0) })
+                .map(|(value, invalid)| {
+                    if *invalid == 1 {
+                        0
+                    } else {
+                        value.extract::<i64>().unwrap_or(0)
+                    }
+                })
                 .collect(),
         )),
         ValueType::Float => Ok(ColumnBuffer::Float(
             values
                 .iter()
                 .zip(invalids.iter())
-                .map(|(value, invalid)| if *invalid == 1 { 0.0 } else { value.extract::<f32>().unwrap_or(0.0) })
+                .map(|(value, invalid)| {
+                    if *invalid == 1 {
+                        0.0
+                    } else {
+                        value.extract::<f32>().unwrap_or(0.0)
+                    }
+                })
                 .collect(),
         )),
         ValueType::Double => Ok(ColumnBuffer::Double(
             values
                 .iter()
                 .zip(invalids.iter())
-                .map(|(value, invalid)| if *invalid == 1 { 0.0 } else { value.extract::<f64>().unwrap_or(0.0) })
+                .map(|(value, invalid)| {
+                    if *invalid == 1 {
+                        0.0
+                    } else {
+                        value.extract::<f64>().unwrap_or(0.0)
+                    }
+                })
                 .collect(),
         )),
         ValueType::DateTime => Ok(ColumnBuffer::TimeLike(
@@ -504,14 +458,26 @@ fn build_column_buffer(value_type: ValueType, values: &[Bound<'_, PyAny>], inval
             values
                 .iter()
                 .zip(invalids.iter())
-                .map(|(value, invalid)| if *invalid == 1 { 0 } else { millis_from_date(value.cast::<PyDate>().unwrap()) })
+                .map(|(value, invalid)| {
+                    if *invalid == 1 {
+                        0
+                    } else {
+                        millis_from_date(value.cast::<PyDate>().unwrap())
+                    }
+                })
                 .collect(),
         )),
         ValueType::Time => Ok(ColumnBuffer::TimeLike(
             values
                 .iter()
                 .zip(invalids.iter())
-                .map(|(value, invalid)| if *invalid == 1 { 0 } else { millis_from_time(value.cast::<PyTime>().unwrap()) })
+                .map(|(value, invalid)| {
+                    if *invalid == 1 {
+                        0
+                    } else {
+                        millis_from_time(value.cast::<PyTime>().unwrap())
+                    }
+                })
                 .collect(),
         )),
         ValueType::TimeSpan => Ok(ColumnBuffer::TimeLike(
@@ -535,14 +501,26 @@ fn build_column_buffer(value_type: ValueType, values: &[Bound<'_, PyAny>], inval
                     if *invalid == 1 {
                         Vec::new()
                     } else {
-                        value.cast::<PyString>().unwrap().to_str().unwrap().as_bytes().to_vec()
+                        value
+                            .cast::<PyString>()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .as_bytes()
+                            .to_vec()
                     }
                 })
                 .collect();
-            let ptrs = values_buf.iter().map(|value| value.as_ptr().cast::<c_char>()).collect();
-            let lengths = values_buf.iter().map(|value| value.len() as c_int).collect();
+            let ptrs = values_buf
+                .iter()
+                .map(|value| value.as_ptr().cast::<c_char>())
+                .collect();
+            let lengths = values_buf
+                .iter()
+                .map(|value| value.len() as c_int)
+                .collect();
             Ok(ColumnBuffer::String {
-                values: values_buf,
+                _values: values_buf,
                 ptrs,
                 lengths,
             })
@@ -559,10 +537,16 @@ fn build_column_buffer(value_type: ValueType, values: &[Bound<'_, PyAny>], inval
                     }
                 })
                 .collect();
-            let ptrs = values_buf.iter().map(|value| value.as_ptr().cast::<c_char>()).collect();
-            let lengths = values_buf.iter().map(|value| value.len() as c_int).collect();
+            let ptrs = values_buf
+                .iter()
+                .map(|value| value.as_ptr().cast::<c_char>())
+                .collect();
+            let lengths = values_buf
+                .iter()
+                .map(|value| value.len() as c_int)
+                .collect();
             Ok(ColumnBuffer::Binary {
-                values: values_buf,
+                _values: values_buf,
                 ptrs,
                 lengths,
             })
@@ -608,7 +592,9 @@ fn ensure_supported_arrow_type(column_name: &str, data_type: &DataType) -> PyRes
     }
 }
 
-fn infer_arrow_schema(schema: &arrow_schema::Schema) -> PyResult<(Vec<String>, HashMap<String, ValueType>)> {
+fn infer_arrow_schema(
+    schema: &arrow_schema::Schema,
+) -> PyResult<(Vec<String>, HashMap<String, ValueType>)> {
     let columns = schema
         .fields()
         .iter()
@@ -617,7 +603,10 @@ fn infer_arrow_schema(schema: &arrow_schema::Schema) -> PyResult<(Vec<String>, H
     let column_types = schema
         .fields()
         .iter()
-        .map(|field| ensure_supported_arrow_type(field.name(), field.data_type()).map(|vt| (field.name().clone(), vt)))
+        .map(|field| {
+            ensure_supported_arrow_type(field.name(), field.data_type())
+                .map(|vt| (field.name().clone(), vt))
+        })
         .collect::<PyResult<HashMap<_, _>>>()?;
     Ok((columns, column_types))
 }
@@ -633,8 +622,12 @@ fn get_column_types(
             .map(|column| {
                 column_types
                     .get(column)
-                    .ok_or_else(|| PyValueError::new_err(format!("missing type for column '{column}'")))
-                    .and_then(|value| ValueType::from_name(value).map(|typed| (column.clone(), typed)))
+                    .ok_or_else(|| {
+                        PyValueError::new_err(format!("missing type for column '{column}'"))
+                    })
+                    .and_then(|value| {
+                        ValueType::from_name(value).map(|typed| (column.clone(), typed))
+                    })
             })
             .collect();
     }
@@ -648,28 +641,60 @@ fn timestamp_array_to_millis(array: &dyn Array, unit: TimeUnit) -> PyResult<Vec<
                 .as_any()
                 .downcast_ref::<TimestampSecondArray>()
                 .ok_or_else(|| PyTypeError::new_err("failed to read timestamp(second) column"))?;
-            Ok((0..typed.len()).map(|i| if typed.is_null(i) { 0 } else { typed.value(i) * 1_000 }).collect())
+            Ok((0..typed.len())
+                .map(|i| {
+                    if typed.is_null(i) {
+                        0
+                    } else {
+                        typed.value(i) * 1_000
+                    }
+                })
+                .collect())
         }
         TimeUnit::Millisecond => {
             let typed = array
                 .as_any()
                 .downcast_ref::<TimestampMillisecondArray>()
-                .ok_or_else(|| PyTypeError::new_err("failed to read timestamp(millisecond) column"))?;
-            Ok((0..typed.len()).map(|i| if typed.is_null(i) { 0 } else { typed.value(i) }).collect())
+                .ok_or_else(|| {
+                    PyTypeError::new_err("failed to read timestamp(millisecond) column")
+                })?;
+            Ok((0..typed.len())
+                .map(|i| if typed.is_null(i) { 0 } else { typed.value(i) })
+                .collect())
         }
         TimeUnit::Microsecond => {
             let typed = array
                 .as_any()
                 .downcast_ref::<TimestampMicrosecondArray>()
-                .ok_or_else(|| PyTypeError::new_err("failed to read timestamp(microsecond) column"))?;
-            Ok((0..typed.len()).map(|i| if typed.is_null(i) { 0 } else { typed.value(i) / 1_000 }).collect())
+                .ok_or_else(|| {
+                    PyTypeError::new_err("failed to read timestamp(microsecond) column")
+                })?;
+            Ok((0..typed.len())
+                .map(|i| {
+                    if typed.is_null(i) {
+                        0
+                    } else {
+                        typed.value(i) / 1_000
+                    }
+                })
+                .collect())
         }
         TimeUnit::Nanosecond => {
             let typed = array
                 .as_any()
                 .downcast_ref::<TimestampNanosecondArray>()
-                .ok_or_else(|| PyTypeError::new_err("failed to read timestamp(nanosecond) column"))?;
-            Ok((0..typed.len()).map(|i| if typed.is_null(i) { 0 } else { typed.value(i) / 1_000_000 }).collect())
+                .ok_or_else(|| {
+                    PyTypeError::new_err("failed to read timestamp(nanosecond) column")
+                })?;
+            Ok((0..typed.len())
+                .map(|i| {
+                    if typed.is_null(i) {
+                        0
+                    } else {
+                        typed.value(i) / 1_000_000
+                    }
+                })
+                .collect())
         }
     }
 }
@@ -681,33 +706,68 @@ fn time_array_to_millis(array: &dyn Array, unit: TimeUnit) -> PyResult<Vec<i64>>
                 .as_any()
                 .downcast_ref::<Time32SecondArray>()
                 .ok_or_else(|| PyTypeError::new_err("failed to read time(second) column"))?;
-            Ok((0..typed.len()).map(|i| if typed.is_null(i) { 0 } else { typed.value(i) as i64 * 1_000 }).collect())
+            Ok((0..typed.len())
+                .map(|i| {
+                    if typed.is_null(i) {
+                        0
+                    } else {
+                        typed.value(i) as i64 * 1_000
+                    }
+                })
+                .collect())
         }
         TimeUnit::Millisecond => {
             let typed = array
                 .as_any()
                 .downcast_ref::<Time32MillisecondArray>()
                 .ok_or_else(|| PyTypeError::new_err("failed to read time(millisecond) column"))?;
-            Ok((0..typed.len()).map(|i| if typed.is_null(i) { 0 } else { typed.value(i) as i64 }).collect())
+            Ok((0..typed.len())
+                .map(|i| {
+                    if typed.is_null(i) {
+                        0
+                    } else {
+                        typed.value(i) as i64
+                    }
+                })
+                .collect())
         }
         TimeUnit::Microsecond => {
             let typed = array
                 .as_any()
                 .downcast_ref::<Time64MicrosecondArray>()
                 .ok_or_else(|| PyTypeError::new_err("failed to read time(microsecond) column"))?;
-            Ok((0..typed.len()).map(|i| if typed.is_null(i) { 0 } else { typed.value(i) / 1_000 }).collect())
+            Ok((0..typed.len())
+                .map(|i| {
+                    if typed.is_null(i) {
+                        0
+                    } else {
+                        typed.value(i) / 1_000
+                    }
+                })
+                .collect())
         }
         TimeUnit::Nanosecond => {
             let typed = array
                 .as_any()
                 .downcast_ref::<Time64NanosecondArray>()
                 .ok_or_else(|| PyTypeError::new_err("failed to read time(nanosecond) column"))?;
-            Ok((0..typed.len()).map(|i| if typed.is_null(i) { 0 } else { typed.value(i) / 1_000_000 }).collect())
+            Ok((0..typed.len())
+                .map(|i| {
+                    if typed.is_null(i) {
+                        0
+                    } else {
+                        typed.value(i) / 1_000_000
+                    }
+                })
+                .collect())
         }
     }
 }
 
-fn build_native_column_buffer(column_name: &str, array: &dyn Array) -> PyResult<(NativeColumnBuffer, Vec<u8>)> {
+fn build_native_column_buffer(
+    column_name: &str,
+    array: &dyn Array,
+) -> PyResult<(ColumnBuffer, Vec<u8>)> {
     let invalids = (0..array.len())
         .map(|index| u8::from(array.is_null(index)))
         .collect::<Vec<_>>();
@@ -717,54 +777,76 @@ fn build_native_column_buffer(column_name: &str, array: &dyn Array) -> PyResult<
             let typed = array
                 .as_any()
                 .downcast_ref::<BooleanArray>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read boolean column '{column_name}'")))?;
-            NativeColumnBuffer::Bool(
+                .ok_or_else(|| {
+                    PyTypeError::new_err(format!("failed to read boolean column '{column_name}'"))
+                })?;
+            ColumnBuffer::Bool(
                 (0..typed.len())
-                    .map(|i| if typed.is_null(i) { 0 } else { u8::from(typed.value(i)) })
+                    .map(|i| {
+                        if typed.is_null(i) {
+                            0
+                        } else {
+                            u8::from(typed.value(i))
+                        }
+                    })
                     .collect(),
             )
         }
         DataType::Int8 => {
-            let typed = array
-                .as_any()
-                .downcast_ref::<Int8Array>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read int8 column '{column_name}'")))?;
-            NativeColumnBuffer::Int(
+            let typed = array.as_any().downcast_ref::<Int8Array>().ok_or_else(|| {
+                PyTypeError::new_err(format!("failed to read int8 column '{column_name}'"))
+            })?;
+            ColumnBuffer::Int(
                 (0..typed.len())
-                    .map(|i| if typed.is_null(i) { 0 } else { typed.value(i) as i32 })
+                    .map(|i| {
+                        if typed.is_null(i) {
+                            0
+                        } else {
+                            typed.value(i) as i32
+                        }
+                    })
                     .collect(),
             )
         }
         DataType::Int16 => {
-            let typed = array
-                .as_any()
-                .downcast_ref::<Int16Array>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read int16 column '{column_name}'")))?;
-            NativeColumnBuffer::Int(
+            let typed = array.as_any().downcast_ref::<Int16Array>().ok_or_else(|| {
+                PyTypeError::new_err(format!("failed to read int16 column '{column_name}'"))
+            })?;
+            ColumnBuffer::Int(
                 (0..typed.len())
-                    .map(|i| if typed.is_null(i) { 0 } else { typed.value(i) as i32 })
+                    .map(|i| {
+                        if typed.is_null(i) {
+                            0
+                        } else {
+                            typed.value(i) as i32
+                        }
+                    })
                     .collect(),
             )
         }
         DataType::Int32 => {
-            let typed = array
-                .as_any()
-                .downcast_ref::<Int32Array>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read int32 column '{column_name}'")))?;
-            NativeColumnBuffer::Int(
+            let typed = array.as_any().downcast_ref::<Int32Array>().ok_or_else(|| {
+                PyTypeError::new_err(format!("failed to read int32 column '{column_name}'"))
+            })?;
+            ColumnBuffer::Int(
                 (0..typed.len())
                     .map(|i| if typed.is_null(i) { 0 } else { typed.value(i) })
                     .collect(),
             )
         }
         DataType::UInt8 => {
-            let typed = array
-                .as_any()
-                .downcast_ref::<UInt8Array>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read uint8 column '{column_name}'")))?;
-            NativeColumnBuffer::Int(
+            let typed = array.as_any().downcast_ref::<UInt8Array>().ok_or_else(|| {
+                PyTypeError::new_err(format!("failed to read uint8 column '{column_name}'"))
+            })?;
+            ColumnBuffer::Int(
                 (0..typed.len())
-                    .map(|i| if typed.is_null(i) { 0 } else { typed.value(i) as i32 })
+                    .map(|i| {
+                        if typed.is_null(i) {
+                            0
+                        } else {
+                            typed.value(i) as i32
+                        }
+                    })
                     .collect(),
             )
         }
@@ -772,19 +854,26 @@ fn build_native_column_buffer(column_name: &str, array: &dyn Array) -> PyResult<
             let typed = array
                 .as_any()
                 .downcast_ref::<UInt16Array>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read uint16 column '{column_name}'")))?;
-            NativeColumnBuffer::Int(
+                .ok_or_else(|| {
+                    PyTypeError::new_err(format!("failed to read uint16 column '{column_name}'"))
+                })?;
+            ColumnBuffer::Int(
                 (0..typed.len())
-                    .map(|i| if typed.is_null(i) { 0 } else { typed.value(i) as i32 })
+                    .map(|i| {
+                        if typed.is_null(i) {
+                            0
+                        } else {
+                            typed.value(i) as i32
+                        }
+                    })
                     .collect(),
             )
         }
         DataType::Int64 => {
-            let typed = array
-                .as_any()
-                .downcast_ref::<Int64Array>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read int64 column '{column_name}'")))?;
-            NativeColumnBuffer::Long(
+            let typed = array.as_any().downcast_ref::<Int64Array>().ok_or_else(|| {
+                PyTypeError::new_err(format!("failed to read int64 column '{column_name}'"))
+            })?;
+            ColumnBuffer::Long(
                 (0..typed.len())
                     .map(|i| if typed.is_null(i) { 0 } else { typed.value(i) })
                     .collect(),
@@ -794,10 +883,18 @@ fn build_native_column_buffer(column_name: &str, array: &dyn Array) -> PyResult<
             let typed = array
                 .as_any()
                 .downcast_ref::<UInt32Array>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read uint32 column '{column_name}'")))?;
-            NativeColumnBuffer::Long(
+                .ok_or_else(|| {
+                    PyTypeError::new_err(format!("failed to read uint32 column '{column_name}'"))
+                })?;
+            ColumnBuffer::Long(
                 (0..typed.len())
-                    .map(|i| if typed.is_null(i) { 0 } else { typed.value(i) as i64 })
+                    .map(|i| {
+                        if typed.is_null(i) {
+                            0
+                        } else {
+                            typed.value(i) as i64
+                        }
+                    })
                     .collect(),
             )
         }
@@ -805,10 +902,18 @@ fn build_native_column_buffer(column_name: &str, array: &dyn Array) -> PyResult<
             let typed = array
                 .as_any()
                 .downcast_ref::<UInt64Array>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read uint64 column '{column_name}'")))?;
-            NativeColumnBuffer::Long(
+                .ok_or_else(|| {
+                    PyTypeError::new_err(format!("failed to read uint64 column '{column_name}'"))
+                })?;
+            ColumnBuffer::Long(
                 (0..typed.len())
-                    .map(|i| if typed.is_null(i) { 0 } else { typed.value(i) as i64 })
+                    .map(|i| {
+                        if typed.is_null(i) {
+                            0
+                        } else {
+                            typed.value(i) as i64
+                        }
+                    })
                     .collect(),
             )
         }
@@ -816,31 +921,47 @@ fn build_native_column_buffer(column_name: &str, array: &dyn Array) -> PyResult<
             let typed = array
                 .as_any()
                 .downcast_ref::<Float32Array>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read float32 column '{column_name}'")))?;
-            NativeColumnBuffer::Float(
+                .ok_or_else(|| {
+                    PyTypeError::new_err(format!("failed to read float32 column '{column_name}'"))
+                })?;
+            ColumnBuffer::Float(
                 (0..typed.len())
-                    .map(|i| if typed.is_null(i) { 0.0 } else { typed.value(i) })
+                    .map(|i| {
+                        if typed.is_null(i) {
+                            0.0
+                        } else {
+                            typed.value(i)
+                        }
+                    })
                     .collect(),
             )
         }
         DataType::Float64 | DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => {
             let values = if let Some(typed) = array.as_any().downcast_ref::<Float64Array>() {
                 (0..typed.len())
-                    .map(|i| if typed.is_null(i) { 0.0 } else { typed.value(i) })
+                    .map(|i| {
+                        if typed.is_null(i) {
+                            0.0
+                        } else {
+                            typed.value(i)
+                        }
+                    })
                     .collect()
             } else {
                 return Err(PyTypeError::new_err(format!(
                     "column '{column_name}' requires an explicit cast before SBDF export"
                 )));
             };
-            NativeColumnBuffer::Double(values)
+            ColumnBuffer::Double(values)
         }
         DataType::Date32 => {
             let typed = array
                 .as_any()
                 .downcast_ref::<Date32Array>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read date32 column '{column_name}'")))?;
-            NativeColumnBuffer::TimeLike(
+                .ok_or_else(|| {
+                    PyTypeError::new_err(format!("failed to read date32 column '{column_name}'"))
+                })?;
+            ColumnBuffer::TimeLike(
                 (0..typed.len())
                     .map(|i| {
                         if typed.is_null(i) {
@@ -856,8 +977,10 @@ fn build_native_column_buffer(column_name: &str, array: &dyn Array) -> PyResult<
             let typed = array
                 .as_any()
                 .downcast_ref::<Date64Array>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read date64 column '{column_name}'")))?;
-            NativeColumnBuffer::TimeLike(
+                .ok_or_else(|| {
+                    PyTypeError::new_err(format!("failed to read date64 column '{column_name}'"))
+                })?;
+            ColumnBuffer::TimeLike(
                 (0..typed.len())
                     .map(|i| {
                         if typed.is_null(i) {
@@ -869,60 +992,126 @@ fn build_native_column_buffer(column_name: &str, array: &dyn Array) -> PyResult<
                     .collect(),
             )
         }
-        DataType::Timestamp(unit, _) => NativeColumnBuffer::TimeLike(
+        DataType::Timestamp(unit, _) => ColumnBuffer::TimeLike(
             timestamp_array_to_millis(array, *unit)?
                 .into_iter()
                 .map(sbdf_millis_from_unix_millis)
                 .collect(),
         ),
-        DataType::Time32(unit) | DataType::Time64(unit) => NativeColumnBuffer::TimeLike(time_array_to_millis(array, *unit)?),
+        DataType::Time32(unit) | DataType::Time64(unit) => {
+            ColumnBuffer::TimeLike(time_array_to_millis(array, *unit)?)
+        }
         DataType::Utf8 => {
             let typed = array
                 .as_any()
                 .downcast_ref::<StringArray>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read utf8 column '{column_name}'")))?;
+                .ok_or_else(|| {
+                    PyTypeError::new_err(format!("failed to read utf8 column '{column_name}'"))
+                })?;
             let values = (0..typed.len())
-                .map(|i| if typed.is_null(i) { Vec::new() } else { typed.value(i).as_bytes().to_vec() })
+                .map(|i| {
+                    if typed.is_null(i) {
+                        Vec::new()
+                    } else {
+                        typed.value(i).as_bytes().to_vec()
+                    }
+                })
                 .collect::<Vec<_>>();
-            let ptrs = values.iter().map(|value| value.as_ptr().cast::<c_char>()).collect();
+            let ptrs = values
+                .iter()
+                .map(|value| value.as_ptr().cast::<c_char>())
+                .collect();
             let lengths = values.iter().map(|value| value.len() as c_int).collect();
-            NativeColumnBuffer::String { values, ptrs, lengths }
+            ColumnBuffer::String {
+                _values: values,
+                ptrs,
+                lengths,
+            }
         }
         DataType::LargeUtf8 => {
             let typed = array
                 .as_any()
                 .downcast_ref::<LargeStringArray>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read large utf8 column '{column_name}'")))?;
+                .ok_or_else(|| {
+                    PyTypeError::new_err(format!(
+                        "failed to read large utf8 column '{column_name}'"
+                    ))
+                })?;
             let values = (0..typed.len())
-                .map(|i| if typed.is_null(i) { Vec::new() } else { typed.value(i).as_bytes().to_vec() })
+                .map(|i| {
+                    if typed.is_null(i) {
+                        Vec::new()
+                    } else {
+                        typed.value(i).as_bytes().to_vec()
+                    }
+                })
                 .collect::<Vec<_>>();
-            let ptrs = values.iter().map(|value| value.as_ptr().cast::<c_char>()).collect();
+            let ptrs = values
+                .iter()
+                .map(|value| value.as_ptr().cast::<c_char>())
+                .collect();
             let lengths = values.iter().map(|value| value.len() as c_int).collect();
-            NativeColumnBuffer::String { values, ptrs, lengths }
+            ColumnBuffer::String {
+                _values: values,
+                ptrs,
+                lengths,
+            }
         }
         DataType::Binary => {
             let typed = array
                 .as_any()
                 .downcast_ref::<BinaryArray>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read binary column '{column_name}'")))?;
+                .ok_or_else(|| {
+                    PyTypeError::new_err(format!("failed to read binary column '{column_name}'"))
+                })?;
             let values = (0..typed.len())
-                .map(|i| if typed.is_null(i) { Vec::new() } else { typed.value(i).to_vec() })
+                .map(|i| {
+                    if typed.is_null(i) {
+                        Vec::new()
+                    } else {
+                        typed.value(i).to_vec()
+                    }
+                })
                 .collect::<Vec<_>>();
-            let ptrs = values.iter().map(|value| value.as_ptr().cast::<c_char>()).collect();
+            let ptrs = values
+                .iter()
+                .map(|value| value.as_ptr().cast::<c_char>())
+                .collect();
             let lengths = values.iter().map(|value| value.len() as c_int).collect();
-            NativeColumnBuffer::Binary { values, ptrs, lengths }
+            ColumnBuffer::Binary {
+                _values: values,
+                ptrs,
+                lengths,
+            }
         }
         DataType::LargeBinary => {
             let typed = array
                 .as_any()
                 .downcast_ref::<LargeBinaryArray>()
-                .ok_or_else(|| PyTypeError::new_err(format!("failed to read large binary column '{column_name}'")))?;
+                .ok_or_else(|| {
+                    PyTypeError::new_err(format!(
+                        "failed to read large binary column '{column_name}'"
+                    ))
+                })?;
             let values = (0..typed.len())
-                .map(|i| if typed.is_null(i) { Vec::new() } else { typed.value(i).to_vec() })
+                .map(|i| {
+                    if typed.is_null(i) {
+                        Vec::new()
+                    } else {
+                        typed.value(i).to_vec()
+                    }
+                })
                 .collect::<Vec<_>>();
-            let ptrs = values.iter().map(|value| value.as_ptr().cast::<c_char>()).collect();
+            let ptrs = values
+                .iter()
+                .map(|value| value.as_ptr().cast::<c_char>())
+                .collect();
             let lengths = values.iter().map(|value| value.len() as c_int).collect();
-            NativeColumnBuffer::Binary { values, ptrs, lengths }
+            ColumnBuffer::Binary {
+                _values: values,
+                ptrs,
+                lengths,
+            }
         }
         other => {
             return Err(PyTypeError::new_err(format!(
@@ -941,7 +1130,9 @@ fn write_record_batch_to_sbdf(
         return Ok(());
     }
     if batch.num_columns() != writer.columns.len() {
-        return Err(PyValueError::new_err("record batch columns do not match writer schema"));
+        return Err(PyValueError::new_err(
+            "record batch columns do not match writer schema",
+        ));
     }
 
     let mut table_slice = null_mut();
@@ -983,7 +1174,7 @@ fn write_record_batch_to_sbdf(
             )));
         }
 
-        if invalids.iter().any(|flag| *flag == 1) {
+        if invalids.contains(&1) {
             let mut invalid_obj = null_mut();
             let error = unsafe {
                 sbdf_obj_create_arr(
@@ -1058,6 +1249,90 @@ fn write_record_batch_to_sbdf(
     Ok(())
 }
 
+fn open_parquet_builder(parquet_path: &str) -> PyResult<ParquetRecordBatchReaderBuilder<File>> {
+    let input = File::open(parquet_path).map_err(|error| {
+        PyRuntimeError::new_err(format!(
+            "failed to open Parquet file '{parquet_path}': {error}"
+        ))
+    })?;
+    ParquetRecordBatchReaderBuilder::try_new(input).map_err(|error| {
+        PyRuntimeError::new_err(format!(
+            "failed to read Parquet metadata '{parquet_path}': {error}"
+        ))
+    })
+}
+
+fn parquet_files_to_sbdf_streaming_impl(
+    parquet_files: Vec<String>,
+    sbdf_path: String,
+    batch_size: usize,
+    column_types: Option<HashMap<String, String>>,
+    encoding_rle: bool,
+) -> PyResult<()> {
+    if batch_size == 0 {
+        return Err(PyValueError::new_err(
+            "batch_size must be greater than zero",
+        ));
+    }
+    if parquet_files.is_empty() {
+        return Err(PyValueError::new_err("parquet_files must not be empty"));
+    }
+
+    let first_path = &parquet_files[0];
+    let expected_schema = open_parquet_builder(first_path)?.schema().as_ref().clone();
+    let (columns, _) = infer_arrow_schema(&expected_schema)?;
+    let typed_columns = get_column_types(&columns, column_types, &expected_schema)?;
+
+    let mut writer = StreamingSbdfWriter::new(
+        sbdf_path,
+        Some(columns.clone()),
+        Some(
+            typed_columns
+                .iter()
+                .map(|(column, value_type)| {
+                    (column.clone(), value_type.spotfire_name().to_string())
+                })
+                .collect(),
+        ),
+        encoding_rle,
+    )?;
+
+    for parquet_path in parquet_files.iter() {
+        let builder = open_parquet_builder(parquet_path)?;
+        let schema = builder.schema().as_ref().clone();
+        if schema != expected_schema {
+            return Err(PyValueError::new_err(format!(
+                "schema mismatch for Parquet file '{parquet_path}'; expected schema from '{first_path}'"
+            )));
+        }
+
+        let mut reader = builder
+            .with_batch_size(batch_size)
+            .build()
+            .map_err(|error| {
+                PyRuntimeError::new_err(format!(
+                    "failed to build Parquet batch reader for '{parquet_path}': {error}"
+                ))
+            })?;
+
+        for batch in reader.by_ref() {
+            let batch = batch.map_err(|error| {
+                PyRuntimeError::new_err(format!(
+                    "failed while reading Parquet batch '{parquet_path}': {error}"
+                ))
+            })?;
+            write_record_batch_to_sbdf(&mut writer, &batch).map_err(|error| {
+                PyRuntimeError::new_err(format!(
+                    "failed while writing SBDF data from '{parquet_path}': {error}"
+                ))
+            })?;
+        }
+    }
+
+    writer.close()?;
+    Ok(())
+}
+
 #[pyfunction]
 #[pyo3(signature = (parquet_path, sbdf_path, batch_size=50_000, column_types=None, encoding_rle=true))]
 fn parquet_to_sbdf_streaming(
@@ -1067,59 +1342,31 @@ fn parquet_to_sbdf_streaming(
     column_types: Option<HashMap<String, String>>,
     encoding_rle: bool,
 ) -> PyResult<()> {
-    if batch_size == 0 {
-        return Err(PyValueError::new_err("batch_size must be greater than zero"));
-    }
-
-    let input = File::open(&parquet_path).map_err(|error| {
-        PyRuntimeError::new_err(format!("failed to open Parquet file '{parquet_path}': {error}"))
-    })?;
-    let builder = ParquetRecordBatchReaderBuilder::try_new(input).map_err(|error| {
-        PyRuntimeError::new_err(format!("failed to read Parquet metadata '{parquet_path}': {error}"))
-    })?;
-    let schema = builder.schema().as_ref().clone();
-    let (columns, _) = infer_arrow_schema(&schema)?;
-    let typed_columns = get_column_types(&columns, column_types, &schema)?;
-    let mut reader = builder
-        .with_batch_size(batch_size)
-        .build()
-        .map_err(|error| PyRuntimeError::new_err(format!("failed to build Parquet batch reader: {error}")))?;
-
-    let mut writer = StreamingSbdfWriter::new(
+    parquet_files_to_sbdf_streaming_impl(
+        vec![parquet_path],
         sbdf_path,
-        Some(columns.clone()),
-        Some(
-            typed_columns
-                .iter()
-                .map(|(column, value_type)| {
-                    let name = match value_type {
-                        ValueType::Bool => "Boolean",
-                        ValueType::Int => "Integer",
-                        ValueType::Long => "LongInteger",
-                        ValueType::Float => "SingleReal",
-                        ValueType::Double => "Real",
-                        ValueType::DateTime => "DateTime",
-                        ValueType::Date => "Date",
-                        ValueType::Time => "Time",
-                        ValueType::TimeSpan => "TimeSpan",
-                        ValueType::String => "String",
-                        ValueType::Binary => "Binary",
-                    };
-                    (column.clone(), name.to_string())
-                })
-                .collect(),
-        ),
+        batch_size,
+        column_types,
         encoding_rle,
-    )?;
+    )
+}
 
-    for batch in reader.by_ref() {
-        let batch = batch.map_err(|error| {
-            PyRuntimeError::new_err(format!("failed while reading Parquet batch '{parquet_path}': {error}"))
-        })?;
-        write_record_batch_to_sbdf(&mut writer, &batch)?;
-    }
-    writer.close()?;
-    Ok(())
+#[pyfunction]
+#[pyo3(signature = (parquet_files, sbdf_path, batch_size=50_000, column_types=None, encoding_rle=true))]
+fn parquet_files_to_sbdf_streaming(
+    parquet_files: Vec<String>,
+    sbdf_path: String,
+    batch_size: usize,
+    column_types: Option<HashMap<String, String>>,
+    encoding_rle: bool,
+) -> PyResult<()> {
+    parquet_files_to_sbdf_streaming_impl(
+        parquet_files,
+        sbdf_path,
+        batch_size,
+        column_types,
+        encoding_rle,
+    )
 }
 
 #[pyclass(unsendable)]
@@ -1143,11 +1390,14 @@ impl StreamingSbdfWriter {
         column_types: Option<HashMap<String, String>>,
         encoding_rle: bool,
     ) -> PyResult<Self> {
-        let filename = CString::new(sbdf_file.clone()).map_err(|_| PyValueError::new_err("invalid filename"))?;
+        let filename = CString::new(sbdf_file.clone())
+            .map_err(|_| PyValueError::new_err("invalid filename"))?;
         let mode = CString::new("wb").unwrap();
         let output_file = unsafe { fopen(filename.as_ptr(), mode.as_ptr()) };
         if output_file.is_null() {
-            return Err(PyRuntimeError::new_err(format!("failed to open SBDF file: {sbdf_file}")));
+            return Err(PyRuntimeError::new_err(format!(
+                "failed to open SBDF file: {sbdf_file}"
+            )));
         }
         let mut writer = Self {
             output_file,
@@ -1159,7 +1409,8 @@ impl StreamingSbdfWriter {
             encoding_rle,
         };
         if let Some(columns) = columns {
-            let column_types = column_types.ok_or_else(|| PyValueError::new_err("column_types must be provided"))?;
+            let column_types = column_types
+                .ok_or_else(|| PyValueError::new_err("column_types must be provided"))?;
             writer.initialize_schema(
                 columns,
                 column_types
@@ -1195,7 +1446,9 @@ impl StreamingSbdfWriter {
                 .ok_or_else(|| PyValueError::new_err(format!("missing batch column: {column}")))?
                 .len()?;
             if len != row_count {
-                return Err(PyValueError::new_err("all batch columns must have the same row count"));
+                return Err(PyValueError::new_err(
+                    "all batch columns must have the same row count",
+                ));
             }
         }
         if row_count == 0 {
@@ -1218,7 +1471,9 @@ impl StreamingSbdfWriter {
         }
 
         if columns != self.columns {
-            return Err(PyValueError::new_err("batch columns do not match writer schema"));
+            return Err(PyValueError::new_err(
+                "batch columns do not match writer schema",
+            ));
         }
 
         let mut table_slice = null_mut();
@@ -1248,7 +1503,9 @@ impl StreamingSbdfWriter {
             unsafe { sbdf_obj_destroy(values_obj) };
             if error != SBDF_OK {
                 unsafe { sbdf_ts_destroy(table_slice) };
-                return Err(PyRuntimeError::new_err(format!("failed to create value array for column '{column}'")));
+                return Err(PyRuntimeError::new_err(format!(
+                    "failed to create value array for column '{column}'"
+                )));
             }
 
             let mut column_slice = null_mut();
@@ -1258,10 +1515,12 @@ impl StreamingSbdfWriter {
                     sbdf_va_destroy(value_array);
                     sbdf_ts_destroy(table_slice);
                 }
-                return Err(PyRuntimeError::new_err(format!("failed to create column slice for column '{column}'")));
+                return Err(PyRuntimeError::new_err(format!(
+                    "failed to create column slice for column '{column}'"
+                )));
             }
 
-            if invalids.iter().any(|flag| *flag == 1) {
+            if invalids.contains(&1) {
                 let mut invalid_obj = null_mut();
                 let error = unsafe {
                     sbdf_obj_create_arr(
@@ -1277,7 +1536,9 @@ impl StreamingSbdfWriter {
                         sbdf_cs_destroy_all(column_slice);
                         sbdf_ts_destroy(table_slice);
                     }
-                    return Err(PyRuntimeError::new_err(format!("failed to create invalid markers for column '{column}'")));
+                    return Err(PyRuntimeError::new_err(format!(
+                        "failed to create invalid markers for column '{column}'"
+                    )));
                 }
                 let mut invalid_array = null_mut();
                 let error = unsafe { sbdf_va_create_dflt(invalid_obj, &mut invalid_array) };
@@ -1287,17 +1548,26 @@ impl StreamingSbdfWriter {
                         sbdf_cs_destroy_all(column_slice);
                         sbdf_ts_destroy(table_slice);
                     }
-                    return Err(PyRuntimeError::new_err(format!("failed to create invalid array for column '{column}'")));
+                    return Err(PyRuntimeError::new_err(format!(
+                        "failed to create invalid array for column '{column}'"
+                    )));
                 }
-                let error =
-                    unsafe { sbdf_cs_add_property(column_slice, SBDF_ISINVALID_VALUEPROPERTY.as_ptr().cast(), invalid_array) };
+                let error = unsafe {
+                    sbdf_cs_add_property(
+                        column_slice,
+                        SBDF_ISINVALID_VALUEPROPERTY.as_ptr().cast(),
+                        invalid_array,
+                    )
+                };
                 if error != SBDF_OK {
                     unsafe {
                         sbdf_va_destroy(invalid_array);
                         sbdf_cs_destroy_all(column_slice);
                         sbdf_ts_destroy(table_slice);
                     }
-                    return Err(PyRuntimeError::new_err(format!("failed to attach invalid array for column '{column}'")));
+                    return Err(PyRuntimeError::new_err(format!(
+                        "failed to attach invalid array for column '{column}'"
+                    )));
                 }
             }
 
@@ -1307,7 +1577,9 @@ impl StreamingSbdfWriter {
                     sbdf_cs_destroy_all(column_slice);
                     sbdf_ts_destroy(table_slice);
                 }
-                return Err(PyRuntimeError::new_err(format!("failed to add column '{column}' to SBDF slice")));
+                return Err(PyRuntimeError::new_err(format!(
+                    "failed to add column '{column}' to SBDF slice"
+                )));
             }
             owned_columns.push(column_slice);
         }
@@ -1340,23 +1612,28 @@ impl StreamingSbdfWriter {
 }
 
 impl StreamingSbdfWriter {
-    fn initialize_schema(&mut self, columns: Vec<String>, types: HashMap<String, ValueType>) -> PyResult<()> {
+    fn initialize_schema(
+        &mut self,
+        columns: Vec<String>,
+        types: HashMap<String, ValueType>,
+    ) -> PyResult<()> {
         self.columns = columns;
         self.column_types = self
             .columns
             .iter()
             .map(|column| {
-                types
-                    .get(column)
-                    .copied()
-                    .ok_or_else(|| PyValueError::new_err(format!("missing type for column '{column}'")))
+                types.get(column).copied().ok_or_else(|| {
+                    PyValueError::new_err(format!("missing type for column '{column}'"))
+                })
             })
             .collect::<PyResult<_>>()?;
 
         let mut table_md = null_mut();
         let error = unsafe { sbdf_md_create(&mut table_md) };
         if error != SBDF_OK {
-            return Err(PyRuntimeError::new_err("failed to create SBDF table metadata"));
+            return Err(PyRuntimeError::new_err(
+                "failed to create SBDF table metadata",
+            ));
         }
         let error = unsafe { sbdf_tm_create(table_md, &mut self.table_meta) };
         unsafe { sbdf_md_destroy(table_md) };
@@ -1368,18 +1645,26 @@ impl StreamingSbdfWriter {
             let mut column_md = null_mut();
             let error = unsafe { sbdf_md_create(&mut column_md) };
             if error != SBDF_OK {
-                return Err(PyRuntimeError::new_err(format!("failed to create metadata for column '{column}'")));
+                return Err(PyRuntimeError::new_err(format!(
+                    "failed to create metadata for column '{column}'"
+                )));
             }
-            let name = CString::new(column.as_str()).map_err(|_| PyValueError::new_err("invalid column name"))?;
-            let error = unsafe { sbdf_cm_set_values(name.as_ptr(), value_type.sbdf_type(), column_md) };
+            let name = CString::new(column.as_str())
+                .map_err(|_| PyValueError::new_err("invalid column name"))?;
+            let error =
+                unsafe { sbdf_cm_set_values(name.as_ptr(), value_type.sbdf_type(), column_md) };
             if error != SBDF_OK {
                 unsafe { sbdf_md_destroy(column_md) };
-                return Err(PyRuntimeError::new_err(format!("failed to set metadata for column '{column}'")));
+                return Err(PyRuntimeError::new_err(format!(
+                    "failed to set metadata for column '{column}'"
+                )));
             }
             let error = unsafe { sbdf_tm_add(column_md, self.table_meta) };
             unsafe { sbdf_md_destroy(column_md) };
             if error != SBDF_OK {
-                return Err(PyRuntimeError::new_err(format!("failed to attach metadata for column '{column}'")));
+                return Err(PyRuntimeError::new_err(format!(
+                    "failed to attach metadata for column '{column}'"
+                )));
             }
         }
 
@@ -1424,6 +1709,7 @@ fn streaming_sbdf_rs(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<
     module.add("SBDFError", _py.get_type::<PyRuntimeError>())?;
     module.add_class::<StreamingSbdfWriter>()?;
     module.add_function(wrap_pyfunction!(parquet_to_sbdf_streaming, module)?)?;
+    module.add_function(wrap_pyfunction!(parquet_files_to_sbdf_streaming, module)?)?;
     Ok(())
 }
 
@@ -1442,12 +1728,18 @@ mod tests {
     #[test]
     fn unix_epoch_offset_matches_year_one_calendar_days() {
         assert_eq!(days_since_epoch(1970, 1, 1), UNIX_EPOCH_DAYS_FROM_YEAR_ONE);
-        assert_eq!(UNIX_EPOCH_MILLIS_FROM_YEAR_ONE, UNIX_EPOCH_DAYS_FROM_YEAR_ONE * MILLIS_PER_DAY);
+        assert_eq!(
+            UNIX_EPOCH_MILLIS_FROM_YEAR_ONE,
+            UNIX_EPOCH_DAYS_FROM_YEAR_ONE * MILLIS_PER_DAY
+        );
     }
 
     #[test]
     fn date32_days_are_shifted_from_unix_epoch_to_sbdf_epoch() {
-        assert_eq!(sbdf_millis_from_unix_days(0), UNIX_EPOCH_MILLIS_FROM_YEAR_ONE);
+        assert_eq!(
+            sbdf_millis_from_unix_days(0),
+            UNIX_EPOCH_MILLIS_FROM_YEAR_ONE
+        );
         let days_2025 = days_since_epoch(2025, 1, 1) - days_since_epoch(1970, 1, 1);
         assert_eq!(
             sbdf_millis_from_unix_days(days_2025),
@@ -1457,7 +1749,10 @@ mod tests {
 
     #[test]
     fn timestamp_millis_are_shifted_from_unix_epoch_to_sbdf_epoch() {
-        assert_eq!(sbdf_millis_from_unix_millis(0), UNIX_EPOCH_MILLIS_FROM_YEAR_ONE);
+        assert_eq!(
+            sbdf_millis_from_unix_millis(0),
+            UNIX_EPOCH_MILLIS_FROM_YEAR_ONE
+        );
         let noon_ms = 12 * 60 * 60 * 1000;
         assert_eq!(
             sbdf_millis_from_unix_millis(noon_ms),
